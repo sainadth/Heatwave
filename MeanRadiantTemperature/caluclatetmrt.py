@@ -8,7 +8,7 @@ from datetime import timedelta
 import folium
 import math
 
-file_location = '../dummy/'
+file_location = '../data/'
 results_location = '../results/'
 
 # 6 direction radiation flux densities (K, L) W/m^2
@@ -55,37 +55,6 @@ angular_coefficient_down = 0.06
 
 # route followed
 reference_points = [
-    # (27.712924292548223, -97.3260302257682), #1
-    # (27.71270039170841, -97.32611024223762), #2
-    # (27.712229584887485, -97.32528231358658), #3
-    # (27.7121665, -97.3248929), #4
-    # (27.711947351059774, -97.32467364628596), #5
-    # (27.712263215364796, -97.32384499306387), #6
-    # (27.71259385702372, -97.32426121800366), #7
-    # (27.712579016168924, -97.32446774809237), #8
-    # (27.71286752202876, -97.32456564872071), #9
-    # (27.71308301047632, -97.3246447738855), #10
-    # (27.713303578977833, -97.32452105765262), #11
-    # (27.713268221860357, -97.32426318280378), #12
-    # (27.713106256296676, -97.32384489976478), #13
-    # (27.71332133659946, -97.32330385574681), #14
-    # (27.713624681211083, -97.32310872504199), #15
-    # (27.713800395122746, -97.3236384613245), #16
-    # (27.71403606502429, -97.32407163807902), #17
-    # (27.714005196452497, -97.32419569024428), #18
-    # (27.714411993287246, -97.3240014969394), #19
-    # (27.714369523113312, -97.32383713673069), #20
-    # (27.714417606685785, -97.32372247229237), #21
-    # (27.714380801977548, -97.32359372626304), #22
-    # (27.715097786238747, -97.32361339258881), #23
-    # (27.71529071273654, -97.32352085637925), #24
-    # (27.714882649788645, -97.32415034502864), #25
-    # (27.71469330264857, -97.3242438745645), #26
-    # (27.71421246717124, -97.32471728445017), #27
-    # (27.71398095303776, -97.32555279255413), #28
-    # (27.713700760916392, -97.3257003140584), #29
-    # (27.712924292548223, -97.3260302257682),  #30
-
     (27.7129249, -97.3260006), #1
     (27.7127061, -97.3260539), #2
     (27.7122306, -97.3251876), #3
@@ -121,6 +90,19 @@ reference_points = [
 stationary_locations = dict()
 
 def extract_folder_name(file_path):
+    """
+    Extracts the folder name from the file path and creates a results directory.
+    
+    This function takes a file path containing 'Marty_' in the name, extracts the portion
+    after 'Marty_' and before the file extension to create a unique folder name for storing
+    results. If the folder doesn't exist, it creates it.
+    
+    Args:
+        file_path (str): Path to the input file containing 'Marty_' in the name
+        
+    Returns:
+        str: The extracted folder name for storing results
+    """
     result_folder_name = file_path.split("Marty_")[1].split('.')[0]
     result_folder_path = os.path.join(results_location, result_folder_name)
     if not os.path.exists(result_folder_path):
@@ -130,6 +112,20 @@ def extract_folder_name(file_path):
     return result_folder_name
 
 def calculate_tmrt(data):
+    """
+    Calculates the Mean Radiant Temperature (MRT) for a single data point.
+    
+    This function implements the MRT calculation formula using 6-directional radiation
+    flux densities (shortwave and longwave), absorption coefficients, angular coefficients,
+    and the Stefan-Boltzmann constant. The formula calculates the weighted sum of all
+    directional radiation fluxes and converts the result from Kelvin to Celsius.
+    
+    Args:
+        data (pandas.Series): A row of data containing radiation flux values for all 6 directions
+        
+    Returns:
+        float: Calculated MRT in Celsius, or NaN if any required values are missing
+    """
     # Skip if any required column contains NaN
     required_columns = [
         back_shortwave, back_longwave,
@@ -165,6 +161,16 @@ def calculate_tmrt(data):
         return float('nan')
 
 def check(data):
+    """
+    Validates calculated MRT values against existing Tmrt values in the dataset.
+    
+    This function compares the newly calculated 'MRT' column with an existing 'Tmrt'
+    column (if present) to verify the accuracy of the calculation. It identifies any
+    mismatched values and reports their indices for debugging purposes.
+    
+    Args:
+        data (pandas.DataFrame): DataFrame containing both 'MRT' and 'Tmrt' columns
+    """
     #compare the MRT values with Tmrt values
     if 'Tmrt' in data.columns:
         mrt_values = data['MRT']
@@ -180,6 +186,20 @@ def check(data):
             print(f"Mismatched indices: {mismatched_indices.tolist()}")
 
 def split_paths(data):
+    """
+    Splits the dataset into separate paths based on NaN values.
+    
+    This function identifies rows containing NaN values in any column and uses them
+    as natural breakpoints to split the continuous data into separate path segments.
+    Each segment represents a distinct walking/measurement path.
+    
+    Args:
+        data (pandas.DataFrame): Input DataFrame with potential NaN rows
+        
+    Returns:
+        tuple: (paths, nan_rows) where paths is a list of [start_idx, end_idx, segment_df]
+               and nan_rows is a list of indices containing NaN values
+    """
     # Split on rows with NaN in coordinates or any column
     nan_rows = data[data.isnull().any(axis=1)].index.tolist()
     paths = []
@@ -195,7 +215,23 @@ def split_paths(data):
     return paths, nan_rows
 
 def create_path_map(path_idx, path_df, stationary_locations):
-    """Create a folium map with multiple paths and location markers with improved visualization for overlapping points"""
+    """
+    Creates an interactive Folium map visualization for a specific path with stationary locations.
+    
+    This function generates a detailed map showing the walking path as a blue line,
+    reference points as numbered yellow markers, start/end points with colored icons,
+    and stationary measurement locations with purple markers. It handles overlapping
+    locations by using extension lines and smart positioning to avoid visual clutter.
+    
+    Args:
+        path_idx (int): Index number of the path being visualized
+        path_df (pandas.DataFrame): DataFrame containing the path coordinates and timestamps
+        stationary_locations (list): List of dictionaries containing stationary point information
+        
+    Returns:
+        folium.Map: Interactive map object ready for saving or display
+    """
+    
     map_center = {'lat': 27.71357483718376, 'lon': -97.32477530414555}
     zoom_level = 18
 
@@ -377,206 +413,23 @@ def create_path_map(path_idx, path_df, stationary_locations):
 
     return m
 
-
-# def find_stationary_locations(path, window_size=10, reference_points=reference_points):
-#     """
-#     Detect stationary points in the path by finding nearest points to reference points.
-#     Assign location numbers based on chronological walking sequence.
-#     Returns: (locations, stationary_indices_dict)
-#     """
-#     start, end, path_df = path[0], path[1], path[2].copy()
-#     locations = []
-#     path_df['TIMESTAMP'] = pd.to_datetime(path_df['TIMESTAMP'], errors='coerce')
-
-#     # Ensure numeric types for calculations
-#     path_df['Full_DecLatitude'] = pd.to_numeric(path_df['Full_DecLatitude'], errors='coerce')
-#     path_df['Full_DecLongitude'] = pd.to_numeric(path_df['Full_DecLongitude'], errors='coerce')
-
-#     def haversine(lat1, lon1, lat2, lon2):
-#         from math import radians, sin, cos, sqrt, asin
-#         R = 6371000
-#         phi1, phi2 = radians(lat1), radians(lat2)
-#         dphi = radians(lat2 - lat1)
-#         dlambda = radians(lon2 - lon1)
-#         a = sin(dphi/2)**2 + cos(phi1)*cos(phi2)*sin(dlambda/2)**2
-#         return 2 * R * asin(sqrt(a))
-
-#     # Find all potential matches with distances for each reference point
-#     all_matches = []
-    
-#     # Handle reference points 1 and 30 specially since they're at the same location
-#     ref_1_coords = reference_points[0]  # Reference point 1
-#     ref_30_coords = reference_points[29]  # Reference point 30
-    
-#     # Check if ref 1 and ref 30 are at the same location (within 10 meters)
-#     same_location = haversine(ref_1_coords[0], ref_1_coords[1], ref_30_coords[0], ref_30_coords[1]) < 10
-    
-#     for ref_idx, (ref_lat, ref_lon) in enumerate(reference_points):
-#         min_distance = float('inf')
-#         nearest_idx = None
-        
-#         # Special handling for reference points 1 and 30 if they're at the same location
-#         if same_location and ref_idx in [0, 29]:  # Reference points 1 and 30
-#             # For ref point 1, only look in the first half of the path
-#             # For ref point 30, only look in the second half of the path
-#             if ref_idx == 0:  # Reference point 1
-#                 search_range = range(0, len(path_df) // 2)
-#             else:  # Reference point 30
-#                 search_range = range(len(path_df) // 2, len(path_df))
-#         else:
-#             search_range = range(len(path_df))
-        
-#         for i in search_range:
-#             row = path_df.iloc[i]
-#             if pd.isnull(row['Full_DecLatitude']) or pd.isnull(row['Full_DecLongitude']):
-#                 continue
-                
-#             distance = haversine(ref_lat, ref_lon, row['Full_DecLatitude'], row['Full_DecLongitude'])
-#             if distance < min_distance:
-#                 min_distance = distance
-#                 nearest_idx = i
-        
-#         # Only add if we found a point within reasonable distance (e.g., 50 meters)
-#         if nearest_idx is not None and min_distance < 50:
-#             all_matches.append({
-#                 'ref_idx': ref_idx,
-#                 'path_idx': nearest_idx,
-#                 'distance': min_distance,
-#                 'ref_lat': ref_lat,
-#                 'ref_lon': ref_lon
-#             })
-    
-#     # Sort by path index to maintain chronological order
-#     all_matches.sort(key=lambda x: x['path_idx'])
-    
-#     stationary_indices = dict()
-#     used_indices = set()
-    
-#     # Process matches in chronological order but use reference point numbers as location numbers
-#     for match in all_matches:
-#         path_idx = match['path_idx']
-        
-#         if path_idx in used_indices:
-#             continue
-            
-#         row = path_df.iloc[path_idx]
-        
-#         # Calculate duration by looking at surrounding points for time window
-#         start_time = row['TIMESTAMP']
-#         end_time = row['TIMESTAMP']
-#         if path_idx >= window_size and path_idx < len(path_df) - window_size:
-#             start_time = path_df.iloc[path_idx - window_size]['TIMESTAMP']
-#             end_time = path_df.iloc[path_idx + window_size]['TIMESTAMP']
-        
-#         # Use reference point number + 1 as location number (so it matches the reference point)
-#         location_number = match['ref_idx'] + 1
-        
-#         locations.append({
-#             'Full_DecLatitude': row['Full_DecLatitude'],
-#             'Full_DecLongitude': row['Full_DecLongitude'],
-#             'duration': (end_time - start_time).total_seconds(),
-#             'start_time': start_time,
-#             'end_time': end_time,
-#             'index': path_idx,
-#             'location_number': location_number,
-#             'reference_distance': match['distance'],
-#             'reference_point': match['ref_idx'] + 1
-#         })
-#         stationary_indices[path_idx] = location_number
-#         used_indices.add(path_idx)
-#         print(f"Assigned stationary location {location_number} to reference point {match['ref_idx']+1} at path index {path_idx}, distance: {match['distance']:.1f}m")
-
-#     return locations, stationary_indices
-
-# def find_stationary_locations(path, window_size=10, reference_points=reference_points, max_distance=50):
-#     """
-#     Find near-path points for reference points, following the path order and prioritizing proximity.
-#     Ensures each assigned path point is between previous and next reference, and never reused.
-#     """
-#     start, end, path_df = path[0], path[1], path[2].copy()
-#     locations = []
-#     path_df['TIMESTAMP'] = pd.to_datetime(path_df['TIMESTAMP'], errors='coerce')
-#     path_df['Full_DecLatitude'] = pd.to_numeric(path_df['Full_DecLatitude'], errors='coerce')
-#     path_df['Full_DecLongitude'] = pd.to_numeric(path_df['Full_DecLongitude'], errors='coerce')
-
-#     matches = []
-#     used_path_indices = set()
-
-#     def haversine(lat1, lon1, lat2, lon2):
-#         from math import radians, sin, cos, sqrt, asin
-#         R = 6371000
-#         phi1, phi2 = radians(lat1), radians(lat2)
-#         dphi = radians(lat2 - lat1)
-#         dlambda = radians(lon2 - lon1)
-#         a = sin(dphi/2)**2 + cos(phi1)*cos(phi2)*sin(dlambda/2)**2
-#         return 2 * R * asin(sqrt(a))
-
-#     for ref_idx, (ref_lat, ref_lon) in enumerate(reference_points):
-#         point_distances = []
-#         for i, row in path_df.iterrows():
-#             if pd.isnull(row['Full_DecLatitude']) or pd.isnull(row['Full_DecLongitude']):
-#                 continue
-#             distance = haversine(ref_lat, ref_lon, row['Full_DecLatitude'], row['Full_DecLongitude'])
-#             if distance <= max_distance:
-#                 point_distances.append((i, distance))
-#         # Sort by distance (closest first)
-#         point_distances.sort(key=lambda x: x[1])
-
-#         selected_idx = None
-#         for idx, distance in point_distances:
-#             if idx in used_path_indices:
-#                 continue
-#             # First reference point: no previous constraint
-#             if ref_idx == 0:
-#                 selected_idx = idx
-#                 break
-#             # Others: maintain strict path order
-#             prev_selected = next((m['path_idx'] for m in matches if m['ref_idx'] == ref_idx - 1), None)
-#             if prev_selected is None or idx > prev_selected:
-#                 selected_idx = idx
-#                 break
-
-#         if selected_idx is not None:
-#             matches.append({
-#                 'ref_idx': ref_idx,
-#                 'path_idx': selected_idx,
-#                 'distance': next(d for (i, d) in point_distances if i == selected_idx),
-#             })
-#             used_path_indices.add(selected_idx)
-
-#     # Prepare stationary locations output:
-#     stationary_indices = dict()
-#     for match in matches:
-#         path_idx = match['path_idx']
-#         row = path_df.loc[path_idx]
-#         start_time = row['TIMESTAMP']
-#         end_time = row['TIMESTAMP']
-#         if path_idx >= window_size and path_idx < len(path_df) - window_size:
-#             start_time = path_df.iloc[path_idx - window_size]['TIMESTAMP']
-#             end_time = path_df.iloc[path_idx + window_size]['TIMESTAMP']
-#         location_number = match['ref_idx'] + 1
-#         locations.append({
-#             'Full_DecLatitude': row['Full_DecLatitude'],
-#             'Full_DecLongitude': row['Full_DecLongitude'],
-#             'duration': (end_time - start_time).total_seconds(),
-#             'start_time': start_time,
-#             'end_time': end_time,
-#             'index': path_idx,
-#             'location_number': location_number,
-#             'reference_distance': match['distance'],
-#             'reference_point': match['ref_idx'] + 1
-#         })
-#         stationary_indices[start + path_idx] = location_number
-#         print(
-#             f"Assigned stationary location {location_number} to reference point {location_number} "
-#             f"at path index {start + path_idx}, distance: {match['distance']:.1f}m"
-#         )
-#     return locations, stationary_indices
-
 def find_stationary_locations(path, window_size=10, reference_points=reference_points):
     """
-    Find stationary points using optimal assignment that prioritizes closest matches
-    while maintaining chronological order.
+    Identifies stationary measurement locations along a path by matching them to reference points.
+    
+    This function uses an optimal assignment algorithm to match actual GPS coordinates from
+    the walking path to predefined reference points. It maintains chronological order while
+    prioritizing closest distance matches. Special handling is applied to the start and end
+    points (reference points 1 and 30) to ensure proper path continuity.
+    
+    Args:
+        path (list): Path information as [start_idx, end_idx, path_dataframe]
+        window_size (int): Number of points before/after each location for duration calculation
+        reference_points (list): List of (latitude, longitude) tuples for reference locations
+        
+    Returns:
+        tuple: (locations, stationary_indices) where locations is a list of location dictionaries
+               and stationary_indices maps original dataframe indices to location numbers
     """
     from math import radians, sin, cos, sqrt, asin
 
@@ -762,7 +615,106 @@ def find_stationary_locations(path, window_size=10, reference_points=reference_p
     print(f"Successfully assigned {len(path_ref_pairs)} out of {n_stops} reference points")
     return locations, stationary_indices
 
+def calculate_average_mrt(data, stationary_indices_all_paths, result_folder_path, file_name):
+    """
+    Calculates average MRT values for stationary points and saves results to Excel files.
+    
+    This function performs two types of averaging:
+    1. Local averaging: For each stationary point, calculates average MRT using 3 points
+       before and after the stationary location
+    2. Global averaging: Calculates overall average MRT for each of the 30 reference
+       point locations across all measurements
+    
+    The function saves two Excel files:
+    - AVG_[filename]: Contains all data points with local averages for stationary locations
+    - AVG_STOP_[filename]: Contains one row per reference point with global averages
+    
+    Args:
+        data (pandas.DataFrame): Complete dataset with MRT values and location assignments
+        stationary_indices_all_paths (list): List of all stationary point indices across paths
+        result_folder_path (str): Directory path where results should be saved
+        file_name (str): Original filename to use as base for output filenames
+    """
+    #for every stationary point, calculate the average MRT by selecting 3 rows before and after the stationary point and 
+    # calculate the average MRT for each stationary point and save it to a new column 'Average_MRT'
+    if 'MRT' not in data.columns:
+        print("MRT column not found in data, cannot calculate average MRT.")
+        return
+        
+    #selecting specific columns for saving
+    columns_to_save = [
+        'TIMESTAMP', 'Full_DecLatitude', 'Full_DecLongitude', 'MRT',
+        'PathNumber', 'StationaryNumber'
+    ]
+    data = data[columns_to_save].copy()
+
+    if 'Average_MRT' in data.columns:
+        data.drop(columns=['Average_MRT'], inplace=True)
+    data['Average_MRT'] = None
+
+    # place average MRT column at the 4th column position 
+    cols = data.columns.tolist()
+    cols.remove('Average_MRT')
+    cols.insert(3, 'Average_MRT')
+    data = data[cols]
+
+    for idx in stationary_indices_all_paths:
+        
+        # Get the range of indices to consider for averaging
+        start_idx = max(0, idx - 3)
+        end_idx = min(len(data), idx + 4)
+
+        # Select the rows in the specified range
+        selected_rows = data.iloc[start_idx:end_idx]
+        # Calculate the average MRT for these rows
+        average_mrt = selected_rows['MRT'].mean()
+        # Update the Average_MRT column for the stationary point
+        data.at[idx, 'Average_MRT'] = average_mrt
+    data['StationaryNumber'] = data['StationaryNumber'].replace('', pd.NA)
+    data.dropna(subset=['StationaryNumber'], inplace=True)
+
+    # Save the updated DataFrame with Average MRT to a new Excel file
+    output_file = os.path.join(result_folder_path, str("AVG_" + file_name))
+    data.to_excel(output_file, index=False)
+    print(f"Average MRT values saved to {output_file}")
+
+
+    #calculate the average MRT for each stationary point and save it to a new column 'Stationary_Average_MRT'
+    result = pd.DataFrame()
+    result['Full_DecLatitude'] = None
+    result['Full_DecLongitude'] = None
+    result['StationaryNumber'] = None
+    result['Stationary_Average_MRT'] = None
+
+    for i in range(1, 31):
+        stationary_rows = data[data['StationaryNumber'] == i]
+        if not stationary_rows.empty:
+            average_mrt = stationary_rows['Average_MRT'].mean()
+            result.loc[i, 'StationaryNumber'] = i
+            result.loc[i, 'Full_DecLatitude'] = reference_points[i-1][0]
+            result.loc[i, 'Full_DecLongitude'] = reference_points[i-1][1]
+            result.loc[i, 'Stationary_Average_MRT'] = average_mrt
+        else:
+            print(f"No data found for StationaryNumber {i}, skipping.")
+    # Save the updated DataFrame with  Average Stationary point MRT to a new Excel file
+    output_file = os.path.join(result_folder_path, str("AVG_STOP_" + file_name))
+    result.to_excel(output_file, index=False)
+    print(f"Average Stationary MRT values saved to {output_file}")
+
 def convert_gmt_to_cst(data):
+    """
+    Converts timestamp data from GMT (Greenwich Mean Time) to CST (Central Standard Time).
+    
+    This function handles timezone conversion for the TIMESTAMP column, converting from
+    UTC/GMT to US/Central timezone and removing timezone information for cleaner display.
+    It uses pandas datetime parsing with error handling for malformed timestamps.
+    
+    Args:
+        data (pandas.DataFrame): DataFrame containing a 'TIMESTAMP' column in GMT format
+        
+    Returns:
+        pandas.DataFrame: DataFrame with TIMESTAMP column converted to CST
+    """
     """Convert TIMESTAMP column from GMT to US/Central timezone"""
     #7/23/2025 13:56
     if 'TIMESTAMP' in data.columns:
@@ -771,16 +723,38 @@ def convert_gmt_to_cst(data):
     return data
 
 def main():
+    """
+    Main processing function that orchestrates the complete MRT analysis workflow.
+    
+    This function serves as the primary entry point and coordinates all analysis steps:
+    1. Processes all Excel files in the data directory
+    2. Converts timestamps from GMT to CST
+    3. Calculates MRT values for each data point
+    4. Splits data into separate paths based on NaN values
+    5. Identifies stationary measurement locations along each path
+    6. Creates interactive maps for visualization
+    7. Calculates and saves average MRT values
+    8. Saves processed data with path and location assignments
+    
+    The function handles multiple files automatically and creates organized output
+    directories for each processed dataset.
+    """
     """Main function to process all Excel files and calculate MRT with stationary locations."""
     for file in os.listdir(file_location):
         if file.endswith('.xlsx'):
             result_folder_name = extract_folder_name(file)
             result_folder_path = os.path.join(results_location, result_folder_name)
             data = pd.read_excel(os.path.join(file_location, file))
+            stationary_indices_all_paths = []
             
+
+            #################################################################################################
             # Convert timestamps from GMT to CST
             data = convert_gmt_to_cst(data)
-            
+            #################################################################################################
+
+
+            #################################################################################################
             # Check if all required columns exist in the DataFrame
             required_columns = [
                 back_shortwave, back_longwave,
@@ -805,7 +779,12 @@ def main():
             cols.remove('MRT')
             cols.insert(2, 'MRT')
             data = data[cols]
-            
+
+            check(data)
+            #################################################################################################
+
+
+            #################################################################################################
             paths, nan_rows = split_paths(data)
             print(f"Split data into {len(paths)} paths.")
 
@@ -828,6 +807,7 @@ def main():
 
                 print(f"Path {i + 1} has {len(stationary_locations)} stationary locations.")
                 print(f"Stationary indices: {stationary_indices}")
+                stationary_indices_all_paths.extend(stationary_indices)
 
                 # Update the data with stationary numbers
                 start_idx, end_idx, _ = path
@@ -845,9 +825,13 @@ def main():
             # Save the updated dataframe with new columns
             data.to_excel(os.path.join(result_folder_path, file), index=False, na_rep='NaN')
             print(f"Processed {file} and saved to {result_folder_path}")
+            #################################################################################################
 
-            calculate_average_mrt(data, result_folder_path)
+
+            #################################################################################################
+            calculate_average_mrt(data, stationary_indices_all_paths, result_folder_path, file)
             print(f"Average MRT calculated and saved to {result_folder_path}")
+            #################################################################################################
 
         else:
             print(f"Skipping {file}, not a .xlsx file.")
