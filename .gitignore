@@ -1,5 +1,28 @@
-#skip all .xlsv files
-*.xlsv
+# Skip all Excel files
+*.xlsx
+*.xls
 
-#skip venv folder   
+# Skip virtual environment folder   
+venv/
 venv
+
+# Skip Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Skip results and data folders if they contain generated files
+results/
+data/*.xlsx
+data/*.xls
+
+# Skip IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Skip OS generated files
+.DS_Store
+Thumbs.db
