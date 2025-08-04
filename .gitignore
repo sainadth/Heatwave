@@ -1,0 +1,5 @@
+#skip all .xlsv files
+*.xlsv
+
+#skip venv folder   
+venv
