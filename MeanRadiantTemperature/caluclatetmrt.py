@@ -3,10 +3,8 @@
 # Read the csv file in data folder and add new column for MRT and save it
 import pandas as pd
 import os
-import pytz
-from datetime import timedelta
 import folium
-import math
+from math import radians, sin, cos, sqrt, asin
 
 file_location = '../data/'
 results_location = '../results/'
@@ -87,7 +85,6 @@ reference_points = [
     (27.7129249, -97.3260006), #30
 ]
 
-stationary_locations = dict()
 
 def extract_folder_name(file_path):
     """
@@ -214,19 +211,19 @@ def split_paths(data):
             print(f"Created path with {len(segment)} points")
     return paths, nan_rows
 
-def create_path_map(path_idx, path_df, stationary_locations):
+def create_path_map(path_idx, path_df, stop_locations):
     """
-    Creates an interactive Folium map visualization for a specific path with stationary locations.
+    Creates an interactive Folium map visualization for a specific path with stop locations.
     
     This function generates a detailed map showing the walking path as a blue line,
     reference points as numbered yellow markers, start/end points with colored icons,
-    and stationary measurement locations with purple markers. It handles overlapping
+    and stop measurement locations with purple markers. It handles overlapping
     locations by using extension lines and smart positioning to avoid visual clutter.
     
     Args:
         path_idx (int): Index number of the path being visualized
         path_df (pandas.DataFrame): DataFrame containing the path coordinates and timestamps
-        stationary_locations (list): List of dictionaries containing stationary point information
+        stop_locations (dict): Dictionary containing stop point information
         
     Returns:
         folium.Map: Interactive map object ready for saving or display
@@ -238,8 +235,50 @@ def create_path_map(path_idx, path_df, stationary_locations):
     # Create map
     m = folium.Map(location=[map_center['lat'], map_center['lon']], zoom_start=zoom_level)
 
-    # Create a feature group for reference points (as a toggleable layer)
-    reference_layer = folium.FeatureGroup(name="Reference Points")
+    # Add enhanced legend in top left corner to avoid overlapping with layer control
+    path_legend_html = f'''
+    <div style="position: fixed; 
+                top: 10px; left: 10px; width: 200px; min-height: 180px; 
+                background-color: white; border:2px solid grey; z-index:9999; 
+                font-size:12px; color: #333;
+                padding: 10px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+        <h4 style="margin: 0 0 10px 0; text-align: center; font-size: 16px; font-weight: bold; color: #2c3e50;">Path {path_idx + 1}</h4>
+        <hr style="margin: 5px 0; border: 1px solid #bdc3c7;">
+        
+        <div style="margin: 5px 0; display: flex; align-items: center;">
+            <div style="width: 20px; height: 3px; background-color: blue; margin-right: 8px;"></div>
+            <span>Walking Path</span>
+        </div>
+        
+        <div style="margin: 5px 0; display: flex; align-items: center;">
+            <div style="width: 12px; height: 12px; background-color: green; border-radius: 50%; margin-right: 8px;"></div>
+            <span>Start Point</span>
+        </div>
+        
+        <div style="margin: 5px 0; display: flex; align-items: center;">
+            <div style="width: 12px; height: 12px; background-color: red; border-radius: 50%; margin-right: 8px;"></div>
+            <span>End Point</span>
+        </div>
+        
+        <div style="margin: 5px 0; display: flex; align-items: center;">
+            <div style="width: 12px; height: 12px; background-color: purple; border-radius: 50%; border: 1px solid white; margin-right: 8px; color: white; font-size: 8px; text-align: center; line-height: 10px;">1</div>
+            <span>Stop Locations</span>
+        </div>
+        
+        <div style="margin: 5px 0; display: flex; align-items: center;">
+            <div style="width: 12px; height: 12px; background-color: yellow; border: 1px solid red; border-radius: 50%; margin-right: 8px; color: black; font-size: 8px; text-align: center; line-height: 10px;">R</div>
+            <span>Reference Points</span>
+        </div>
+        
+        <div style="margin-top: 10px; font-size: 10px; color: #7f8c8d; text-align: center;">
+            Toggle layers using the control panel
+        </div>
+    </div>
+    '''
+    m.get_root().html.add_child(folium.Element(path_legend_html))
+
+    # Create a feature group for reference points (as a toggleable layer, unselected by default)
+    reference_layer = folium.FeatureGroup(name="Reference Points", show=False)
     
     # Add reference points to the layer
     for i, (lat, lon) in enumerate(reference_points):
@@ -284,7 +323,19 @@ def create_path_map(path_idx, path_df, stationary_locations):
         icon=folium.Icon(color='red', icon='stop')
     ).add_to(m)
     
-    # Improved visualization for stationary points
+    # Convert stop_locations dict to list for compatibility
+    if isinstance(stop_locations, dict):
+        stop_locations_list = list(stop_locations.values())
+    else:
+        stop_locations_list = stop_locations
+    
+    # Check if we have any stop locations to display
+    if not stop_locations_list:
+        print(f"No stop locations found for path {path_idx + 1}")
+        folium.LayerControl().add_to(m)
+        return m
+    
+    # Improved visualization for stop points
     def calculate_smart_offset(base_lat, base_lon, used_positions, offset_distance=0.00012):
         """Calculate smart offset position that avoids path and other markers (longer line equivalent)"""
         import math
@@ -320,7 +371,7 @@ def create_path_map(path_idx, path_df, stationary_locations):
     processed_locations = set()
     used_positions = []
     
-    for i, location in enumerate(stationary_locations):
+    for i, location in enumerate(stop_locations_list):
         if i in processed_locations:
             continue
             
@@ -328,7 +379,7 @@ def create_path_map(path_idx, path_df, stationary_locations):
         nearby_group = [{'idx': i, 'location': location}]
         processed_locations.add(i)
         
-        for j, other_location in enumerate(stationary_locations):
+        for j, other_location in enumerate(stop_locations_list):
             if j <= i or j in processed_locations:
                 continue
                 
@@ -353,11 +404,9 @@ def create_path_map(path_idx, path_df, stationary_locations):
                     icon_anchor=(10, 10)
                 ),
                 popup=folium.Popup(f"Path {path_idx + 1} - Location {loc['location_number']}<br>"
-                        f"Reference Point: {loc.get('reference_point', 'N/A')}<br>"
-                        f"Duration: {loc['duration']:.1f} seconds<br>"
-                        f"Distance to ref: {loc['reference_distance']:.1f}m<br>"
-                        f"From: {loc['start_time']}<br>"
-                        f"To: {loc['end_time']}", max_width=400)
+                        f"Duration: {loc.get('duration', 45):.1f} seconds<br>"
+                        f"From: {loc.get('start_time', 'N/A')}<br>"
+                        f"To: {loc.get('end_time', 'N/A')}", max_width=400)
             ).add_to(m)
             
         else:
@@ -401,11 +450,9 @@ def create_path_map(path_idx, path_df, stationary_locations):
                         icon_anchor=(10, 10)
                     ),
                     popup=folium.Popup(f"Path {path_idx + 1} - Location {loc['location_number']}<br>"
-                            f"Reference Point: {loc.get('reference_point', 'N/A')}<br>"
-                            f"Duration: {loc['duration']:.1f} seconds<br>"
-                            f"Distance to ref: {loc['reference_distance']:.1f}m<br>"
-                            f"From: {loc['start_time']}<br>"
-                            f"To: {loc['end_time']}", max_width=400)
+                            f"Duration: {loc.get('duration', 45):.1f} seconds<br>"
+                            f"From: {loc.get('start_time', 'N/A')}<br>"
+                            f"To: {loc.get('end_time', 'N/A')}", max_width=400)
                 ).add_to(m)
 
     # Add layer control to toggle reference points on/off
@@ -413,9 +460,19 @@ def create_path_map(path_idx, path_df, stationary_locations):
 
     return m
 
-def find_stationary_locations(path, window_size=10, reference_points=reference_points):
+
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371000
+    phi1, phi2 = radians(lat1), radians(lat2)
+    dphi = radians(lat2 - lat1)
+    dlambda = radians(lon2 - lon1)
+    a = sin(dphi/2)**2 + cos(phi1)*cos(phi2)*sin(dlambda/2)**2
+    return 2 * R * asin(sqrt(a))
+
+
+def find_stop_locations(path, window_size=10, reference_points=reference_points):
     """
-    Identifies stationary measurement locations along a path by matching them to reference points.
+    Identifies stop measurement locations along a path by matching them to reference points.
     
     This function uses an optimal assignment algorithm to match actual GPS coordinates from
     the walking path to predefined reference points. It maintains chronological order while
@@ -428,18 +485,9 @@ def find_stationary_locations(path, window_size=10, reference_points=reference_p
         reference_points (list): List of (latitude, longitude) tuples for reference locations
         
     Returns:
-        tuple: (locations, stationary_indices) where locations is a list of location dictionaries
-               and stationary_indices maps original dataframe indices to location numbers
+        tuple: (locations, stop_indices) where locations is a list of location dictionaries
+               and stop_indices maps original dataframe indices to location numbers
     """
-    from math import radians, sin, cos, sqrt, asin
-
-    def haversine(lat1, lon1, lat2, lon2):
-        R = 6371000
-        phi1, phi2 = radians(lat1), radians(lat2)
-        dphi = radians(lat2 - lat1)
-        dlambda = radians(lon2 - lon1)
-        a = sin(dphi/2)**2 + cos(phi1)*cos(phi2)*sin(dlambda/2)**2
-        return 2 * R * asin(sqrt(a))
 
     start, end, path_df = path[0], path[1], path[2].copy()
     path_df['TIMESTAMP'] = pd.to_datetime(path_df['TIMESTAMP'], errors='coerce')
@@ -578,7 +626,7 @@ def find_stationary_locations(path, window_size=10, reference_points=reference_p
     path_ref_pairs.sort(key=lambda x: x[0])  # Sort by path index
     
     locations = []
-    stationary_indices = {}
+    stop_indices = {}
     
     for location_number, (path_idx, ref_idx) in enumerate(path_ref_pairs, 1):
         row = path_df.iloc[path_idx]
@@ -608,35 +656,116 @@ def find_stationary_locations(path, window_size=10, reference_points=reference_p
         
         # Map back to original dataframe indices
         original_idx = start + path_idx
-        stationary_indices[original_idx] = location_number
+        stop_indices[original_idx] = location_number
         
         print(f"Final: Location {location_number} assigned to reference point {ref_idx + 1} at path index {path_idx}")
     
     print(f"Successfully assigned {len(path_ref_pairs)} out of {n_stops} reference points")
-    return locations, stationary_indices
+    return locations, stop_indices
 
-def calculate_average_mrt(data, stationary_indices_all_paths, result_folder_path, file_name):
+def add_stops(file_location, timestamps_file_name, data, tolerance=1):
     """
-    Calculates average MRT values for stationary points and saves results to Excel files.
+    Assigns stop numbers to data points based on exact timestamps from a timestamps file.
+    
+    This function loads a timestamps file containing exact stop times and matches them
+    to corresponding data points in the main dataset. It identifies periods of zero
+    speed around each timestamp and assigns the same stop number to all points in
+    that stationary period.
+    
+    Args:
+        file_location (str): Directory path containing the timestamps file
+        timestamps_file_name (str): Name of the Excel file with stop timestamps
+        data (pandas.DataFrame): Main dataset to add stop assignments to
+        
+    Returns:
+        None: Modifies the data DataFrame in place by adding 'Stop' column values
+    """
+    # Load the timestamps data
+    timestamps_data = pd.read_excel(os.path.join(file_location, timestamps_file_name))
+    path_stops = {}
+    
+    print("Original timestamps data:")
+    print(timestamps_data.head())
+    
+    # Create TIMESTAMP column from Date and Time columns
+    timestamps_data["TIMESTAMP"] = pd.to_datetime(
+        timestamps_data['Date'].astype(str) + ' ' + timestamps_data['Time'].astype(str), 
+        errors='coerce'
+    )
+
+    timestamps_data["TIMESTAMP"] = timestamps_data["TIMESTAMP"] + pd.to_timedelta(timestamps_data['TIMESTAMP'].dt.second % 2, unit='s')
+
+    # Initialize Stop column if it doesn't exist
+    if 'Stop' not in data.columns:
+        data['Stop'] = None
+    print(data.columns)
+    # Process each stop timestamp
+    stop_indices = []
+    for idx, row in timestamps_data.iterrows():
+        cur_stop_number = row['Stop']
+        target_timestamp = row['TIMESTAMP']
+        
+        print(f"Processing Stop {cur_stop_number} at {target_timestamp}")
+        
+        target_idx = data[data['TIMESTAMP'] == target_timestamp].index
+        if(target_idx.empty):
+            #selecting the nth timestamp
+            offset = pd.to_datetime(target_timestamp).second // 2
+            target_timestamp = pd.to_datetime(target_timestamp).replace(second=0, microsecond=0)
+            target_idx = data[data['TIMESTAMP'] == target_timestamp].index + offset
+
+        data.at[target_idx[0], 'Stop'] = cur_stop_number
+        r = target_idx[0] + 1
+        cnt = 1
+        while r < len(data) and cnt < 22 and data.at[r, 'Speed'] == 0:
+            # Assign stop number to all points with zero speed after the target timestamp
+            data.at[r, 'Stop'] = cur_stop_number
+            r += 1
+            cnt += 1
+        l = target_idx[0] - 1
+        while l >= 0 and cnt < 22 and data.at[l, 'Speed'] == 0:
+            # Assign stop number to all points with zero speed before the target timestamp
+            data.at[l, 'Stop'] = cur_stop_number
+            l -= 1
+            cnt += 1
+        selected_stop = (l + r) // 2 # in the center
+        path_stops[data.at[target_idx[0], 'PathNumber']] = path_stops.get(data.at[target_idx[0], 'PathNumber'], {})
+        path_stops[data.at[target_idx[0], 'PathNumber']][row['Stop']] = {
+            'Full_DecLatitude': data.at[selected_stop, 'Full_DecLatitude'],
+            'Full_DecLongitude': data.at[selected_stop, 'Full_DecLongitude'],
+            'duration': 45,
+            'start_time': data.at[l + 1, 'TIMESTAMP'],
+            'end_time': data.at[r - 1, 'TIMESTAMP'],
+            'index': data.at[target_idx[0], 'PathNumber'],
+            'location_number': row['Stop'],
+        }
+        stop_indices.append(selected_stop)
+
+        print(f"Assigned Stop {cur_stop_number} to indices from {target_idx[0] + 1} to {r - 1} = {r - (target_idx[0] + 1)} (zero-speed points).")
+    return path_stops, stop_indices
+
+def calculate_average_mrt(data, stop_indices, result_folder_path, file_name):
+    """
+    Calculates average MRT values for stop points and saves results to Excel files.
     
     This function performs two types of averaging:
-    1. Local averaging: For each stationary point, calculates average MRT using 3 points
-       before and after the stationary location
+    1. Local averaging: For each stop point, calculates average MRT using 3 points
+       before and after the stop location
     2. Global averaging: Calculates overall average MRT for each of the 30 reference
        point locations across all measurements
     
     The function saves two Excel files:
-    - AVG_[filename]: Contains all data points with local averages for stationary locations
+    - AVG_[filename]: Contains all data points with local averages for stop locations
     - AVG_STOP_[filename]: Contains one row per reference point with global averages
     
     Args:
         data (pandas.DataFrame): Complete dataset with MRT values and location assignments
-        stationary_indices_all_paths (list): List of all stationary point indices across paths
+        stop_indices_all_paths (list): List of all stop point indices across paths
         result_folder_path (str): Directory path where results should be saved
         file_name (str): Original filename to use as base for output filenames
     """
-    #for every stationary point, calculate the average MRT by selecting 3 rows before and after the stationary point and 
-    # calculate the average MRT for each stationary point and save it to a new column 'Average_MRT'
+    #for every stop point, calculate the average MRT by selecting 3 rows before and after the stop point and 
+    # calculate the average MRT for each stop point and save it to a new column 'Average_MRT'
     if 'MRT' not in data.columns:
         print("MRT column not found in data, cannot calculate average MRT.")
         return
@@ -644,7 +773,7 @@ def calculate_average_mrt(data, stationary_indices_all_paths, result_folder_path
     #selecting specific columns for saving
     columns_to_save = [
         'TIMESTAMP', 'Full_DecLatitude', 'Full_DecLongitude', 'MRT',
-        'PathNumber', 'StationaryNumber'
+        'PathNumber', 'Stop'
     ]
     data = data[columns_to_save].copy()
 
@@ -658,8 +787,8 @@ def calculate_average_mrt(data, stationary_indices_all_paths, result_folder_path
     cols.insert(3, 'Average_MRT')
     data = data[cols]
 
-    for idx in stationary_indices_all_paths:
-        
+    for idx in stop_indices:
+        print(idx)
         # Get the range of indices to consider for averaging
         start_idx = max(0, idx - 3)
         end_idx = min(len(data), idx + 4)
@@ -668,10 +797,10 @@ def calculate_average_mrt(data, stationary_indices_all_paths, result_folder_path
         selected_rows = data.iloc[start_idx:end_idx]
         # Calculate the average MRT for these rows
         average_mrt = selected_rows['MRT'].mean()
-        # Update the Average_MRT column for the stationary point
+        # Update the Average_MRT column for the stop point
         data.at[idx, 'Average_MRT'] = average_mrt
-    data['StationaryNumber'] = data['StationaryNumber'].replace('', pd.NA)
-    data.dropna(subset=['StationaryNumber'], inplace=True)
+    data['Stop'] = data['Stop'].replace('', pd.NA)
+    data.dropna(subset=['Stop', 'Average_MRT'], inplace=True)
 
     # Save the updated DataFrame with Average MRT to a new Excel file
     output_file = os.path.join(result_folder_path, str("AVG_" + file_name))
@@ -679,23 +808,23 @@ def calculate_average_mrt(data, stationary_indices_all_paths, result_folder_path
     print(f"Average MRT values saved to {output_file}")
 
 
-    #calculate the average MRT for each stationary point and save it to a new column 'Stationary_Average_MRT'
+    #calculate the average MRT for each stop point and save it to a new column 'Stationary_Average_MRT'
     result = pd.DataFrame()
     result['Full_DecLatitude'] = None
     result['Full_DecLongitude'] = None
-    result['StationaryNumber'] = None
+    result['Stop'] = None
     result['Stationary_Average_MRT'] = None
 
     for i in range(1, 31):
-        stationary_rows = data[data['StationaryNumber'] == i]
-        if not stationary_rows.empty:
-            average_mrt = stationary_rows['Average_MRT'].mean()
-            result.loc[i, 'StationaryNumber'] = i
+        stop_rows = data[data['Stop'] == i]
+        if not stop_rows.empty:
+            average_mrt = stop_rows['Average_MRT'].mean()
+            result.loc[i, 'Stop'] = i
             result.loc[i, 'Full_DecLatitude'] = reference_points[i-1][0]
             result.loc[i, 'Full_DecLongitude'] = reference_points[i-1][1]
             result.loc[i, 'Stationary_Average_MRT'] = average_mrt
         else:
-            print(f"No data found for StationaryNumber {i}, skipping.")
+            print(f"No data found for Stop {i}, skipping.")
     # Save the updated DataFrame with  Average Stationary point MRT to a new Excel file
     output_file = os.path.join(result_folder_path, str("AVG_STOP_" + file_name))
     result.to_excel(output_file, index=False)
@@ -721,7 +850,6 @@ def convert_gmt_to_cst(data):
         data['TIMESTAMP'] = pd.to_datetime(data['TIMESTAMP'], errors='coerce', utc=True, format='%m/%d/%Y %H:%M')
         data['TIMESTAMP'] = data['TIMESTAMP'].dt.tz_convert('US/Central').dt.tz_localize(None)  
     return data
-
 def main():
     """
     Main processing function that orchestrates the complete MRT analysis workflow.
@@ -731,7 +859,7 @@ def main():
     2. Converts timestamps from GMT to CST
     3. Calculates MRT values for each data point
     4. Splits data into separate paths based on NaN values
-    5. Identifies stationary measurement locations along each path
+    5. Identifies stop measurement locations along each path
     6. Creates interactive maps for visualization
     7. Calculates and saves average MRT values
     8. Saves processed data with path and location assignments
@@ -739,13 +867,16 @@ def main():
     The function handles multiple files automatically and creates organized output
     directories for each processed dataset.
     """
-    """Main function to process all Excel files and calculate MRT with stationary locations."""
+    """Main function to process all Excel files and calculate MRT with stop locations."""
     for file in os.listdir(file_location):
-        if file.endswith('.xlsx'):
+        if file.endswith('.xlsx') and file.startswith('Marty_'):
+            # print(f"Processing file: {file}")
+            timestamps_file_name = f"Timestamps_{file.split('Marty_')[1].split('.')[0]}.xlsx"
+            # print(f"Generated timestamps file name: {timestamps_file_name}")
+            # break
             result_folder_name = extract_folder_name(file)
             result_folder_path = os.path.join(results_location, result_folder_name)
             data = pd.read_excel(os.path.join(file_location, file))
-            stationary_indices_all_paths = []
             
 
             #################################################################################################
@@ -788,9 +919,9 @@ def main():
             paths, nan_rows = split_paths(data)
             print(f"Split data into {len(paths)} paths.")
 
-            # Add columns for path and stationary point
+            # Add columns for path and stop point
             data['PathNumber'] = ''
-            data['StationaryNumber'] = ''
+            data['Stop'] = ''
 
             # Initialize all PathNumber values first
             current_path_number = 1
@@ -801,35 +932,31 @@ def main():
                         data.at[j, 'PathNumber'] = current_path_number
                 current_path_number += 1
 
-            # Process each path for stationary locations
+            # Process each path for stop locations
+            # stop_locations, stop_indices = 
+            path_stops, stop_indices = add_stops(file_location, timestamps_file_name, data)
+            print("Stop points added to the data based on timestamps.")
+            # print(path_stops)
+            # break
             for i, path in enumerate(paths):
-                stationary_locations, stationary_indices = find_stationary_locations(path)
-
-                print(f"Path {i + 1} has {len(stationary_locations)} stationary locations.")
-                print(f"Stationary indices: {stationary_indices}")
-                stationary_indices_all_paths.extend(stationary_indices)
-
-                # Update the data with stationary numbers
-                start_idx, end_idx, _ = path
-                for path_idx, stationary_num in stationary_indices.items():
-                    # Convert path-relative index to actual data index
-                    data.at[path_idx, 'StationaryNumber'] = stationary_num
-                    print(f"Set StationaryNumber {stationary_num} at data index {path_idx} (path {i+1}, path_idx {path_idx})")
-
-                path_map = create_path_map(i, path[2], stationary_locations)
+                # Get stop locations for this specific path
+                current_path_stops = path_stops.get(i + 1, {})
+                
+                path_map = create_path_map(i, path[2], current_path_stops)
                 if path_map is not None:
                     path_map.save(os.path.join(result_folder_path, f"path_{i + 1}.html"))
                 else:
                     print("No paths to display on the map.")
+
 
             # Save the updated dataframe with new columns
             data.to_excel(os.path.join(result_folder_path, file), index=False, na_rep='NaN')
             print(f"Processed {file} and saved to {result_folder_path}")
             #################################################################################################
 
-
+            # break
             #################################################################################################
-            calculate_average_mrt(data, stationary_indices_all_paths, result_folder_path, file)
+            calculate_average_mrt(data, stop_indices, result_folder_path, file)
             print(f"Average MRT calculated and saved to {result_folder_path}")
             #################################################################################################
 
