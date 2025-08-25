@@ -5,6 +5,7 @@ import pandas as pd
 import os
 import folium
 from math import radians, sin, cos, sqrt, asin
+from utci import utci_approx, rh_to_vp
 
 file_location = '../data/'
 results_location = '../results/'
@@ -49,6 +50,21 @@ angular_coefficient_left = 0.22
 angular_coefficient_right = 0.22
 angular_coefficient_up = 0.06
 angular_coefficient_down = 0.06
+
+# Thermal Stress Categories
+
+thermal_stress_categories = {
+    "Extreme heat stress": [47, float('inf')],
+    "Very strong heat stress": [38, 46],
+    "Strong heat stress": [32, 38],
+    "Moderate heat stress": [26, 32],
+    "No thermal stress": [9, 26],
+    "Slight cold stress": [0, 9],
+    "Moderate cold stress": [-13, 0],
+    "Strong cold stress": [-27, -13],
+    "Very strong cold stress": [-40, -27],
+    "Extreme cold stress": [-float('inf'), -40]
+}
 
 
 # route followed
@@ -850,6 +866,94 @@ def convert_gmt_to_cst(data):
         data['TIMESTAMP'] = pd.to_datetime(data['TIMESTAMP'], errors='coerce', utc=True, format='%m/%d/%Y %H:%M')
         data['TIMESTAMP'] = data['TIMESTAMP'].dt.tz_convert('US/Central').dt.tz_localize(None)  
     return data
+
+
+def calculate_utci(data):
+    """
+    Calculate the Universal Thermal Climate Index (UTCI) for a single data point.
+    
+    This function calculates UTCI using air temperature, mean radiant temperature,
+    relative humidity, and derived vapor pressure. It handles missing values by
+    returning NaN when required columns are unavailable.
+    
+    Args:
+        data (pandas.Series): A row of data containing meteorological values
+        
+    Returns:
+        float: Calculated UTCI in Celsius, or NaN if any required values are missing
+    """
+    # Required columns for UTCI calculation
+    required_columns = ['AirTmpF', 'MRT', 'RH', 'MS_WS_ms']
+
+    # Check if any required column contains NaN
+    
+    if any(pd.isnull(data[col]) for col in required_columns):
+        return float('nan')
+    
+    try:
+        print(float(data['AirTmpF']), float(data['MRT']), float(data['RH']), float(data['MS_WS_ms']))
+        taF = float(data['AirTmpF'])
+        taC = (taF - 32) * 5/9
+        print(f"Converted AirTmpF: {taF} to Celsius: {taC}")
+        
+        mrt = float(data['MRT'])
+        print(f"Mean Radiant Temperature (MRT): {mrt}")
+
+        rh = float(data['RH'])
+        print(f"Relative Humidity (RH): {rh}")
+        
+        # Calculate vapor pressure
+        vp = rh_to_vp(taC, rh)
+        print(f"Calculated Vapor Pressure (VP): {vp} hPa")
+
+        va = float(data['MS_WS_ms'])
+        print(f"Wind Speed (VA): {va} m/s")
+
+        # Calculate UTCI
+        utci_val = utci_approx(taC, vp, mrt, va)
+        print(f"Calculated UTCI: {utci_val} for AirTmpF: {taF}, MRT: {mrt}, RH: {rh}")
+        
+        return utci_val
+        
+    except Exception as e:
+        # Return NaN for consistency
+        return float('nan')
+
+def calculate_thermal_stress(data):
+    """
+    Calculate thermal stress category based on UTCI value.
+    
+    This function categorizes UTCI values into thermal stress categories according
+    to established ranges. It handles missing values by returning NaN when the
+    UTCI column is unavailable.
+    
+    Args:
+        data (pandas.Series): A row of data containing UTCI value
+        
+    Returns:
+        str: Thermal stress category name, or NaN if UTCI is missing
+    """
+    # Required columns for thermal stress calculation
+    required_columns = ['UTCI']
+
+    # Check if any required column contains NaN
+    if any(pd.isnull(data[col]) for col in required_columns):
+        return float('nan')
+
+    try:
+        utci = float(data['UTCI'])
+        
+        # Find the appropriate thermal stress category
+        for category, (min_val, max_val) in thermal_stress_categories.items():
+            if min_val <= utci < max_val:
+                return category
+        
+        # If no category matches, return unknown
+        return "Unknown"
+
+    except Exception as e:
+        return float('nan')
+
 def main():
     """
     Main processing function that orchestrates the complete MRT analysis workflow.
@@ -911,7 +1015,32 @@ def main():
             cols.insert(2, 'MRT')
             data = data[cols]
 
-            check(data)
+            # check(data)
+            #################################################################################################
+
+
+            #################################################################################################
+            # Apply UTCI calculation to each row
+            data['UTCI'] = data.apply(calculate_utci, axis=1)
+            print("UTCI calculated and added to the dataframe.")
+            
+            # Reorder columns to put UTCI at position 3 (4th position)
+            cols = data.columns.tolist()
+            cols.remove('UTCI')
+            cols.insert(3, 'UTCI')
+            data = data[cols]
+            #################################################################################################
+            
+            
+            #################################################################################################
+            data['ThermalStress'] = data.apply(calculate_thermal_stress, axis=1)
+            print("ThermalStress calculated and added to the dataframe.")
+
+            # Reorder columns to put ThermalStress at position 4 (5th position)
+            cols = data.columns.tolist()
+            cols.remove('ThermalStress')
+            cols.insert(4, 'ThermalStress')
+            data = data[cols]
             #################################################################################################
 
 
@@ -954,11 +1083,13 @@ def main():
             print(f"Processed {file} and saved to {result_folder_path}")
             #################################################################################################
 
-            # break
             #################################################################################################
             calculate_average_mrt(data, stop_indices, result_folder_path, file)
             print(f"Average MRT calculated and saved to {result_folder_path}")
             #################################################################################################
+
+            
+            
 
         else:
             print(f"Skipping {file}, not a .xlsx file.")
