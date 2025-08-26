@@ -127,17 +127,10 @@ def extract_folder_name(file_path):
 def calculate_tmrt(data):
     """
     Calculates the Mean Radiant Temperature (MRT) for a single data point.
-    
-    This function implements the MRT calculation formula using 6-directional radiation
+
+    Implements the MRT calculation formula using 6-directional radiation
     flux densities (shortwave and longwave), absorption coefficients, angular coefficients,
-    and the Stefan-Boltzmann constant. The formula calculates the weighted sum of all
-    directional radiation fluxes and converts the result from Kelvin to Celsius.
-    
-    Args:
-        data (pandas.Series): A row of data containing radiation flux values for all 6 directions
-        
-    Returns:
-        float: Calculated MRT in Celsius, or NaN if any required values are missing
+    and the Stefan-Boltzmann constant. Returns NaN if any required value is missing.
     """
     # Skip if any required column contains NaN
     required_columns = [
@@ -410,7 +403,11 @@ def create_path_map(path_idx, path_df, stop_locations):
         if len(nearby_group) == 1:
             # Single location - place numbered marker directly on path
             loc = nearby_group[0]['location']
-            
+            date_val = loc.get('date', None)
+            time_val = loc.get('time', None)
+            date_str = date_val.strftime('%Y-%m-%d') if hasattr(date_val, 'strftime') else (str(date_val) if date_val is not None else 'N/A')
+            time_str = time_val.strftime('%H:%M:%S') if hasattr(time_val, 'strftime') else (str(time_val) if time_val is not None else 'N/A')
+            # print(date_str, time_str)
             # Numbered marker directly on the path point
             folium.Marker(
                 [loc['Full_DecLatitude'], loc['Full_DecLongitude']],
@@ -422,7 +419,9 @@ def create_path_map(path_idx, path_df, stop_locations):
                 popup=folium.Popup(f"Path {path_idx + 1} - Location {loc['location_number']}<br>"
                         f"Duration: {loc.get('duration', 45):.1f} seconds<br>"
                         f"From: {loc.get('start_time', 'N/A')}<br>"
-                        f"To: {loc.get('end_time', 'N/A')}", max_width=400)
+                        f"To: {loc.get('end_time', 'N/A')}<br>"
+                        f"Date: {date_str}<br>"
+                        f"Time: {time_str}", max_width=400)
             ).add_to(m)
             
         else:
@@ -444,7 +443,12 @@ def create_path_map(path_idx, path_df, stop_locations):
             
             for idx, item in enumerate(nearby_group):
                 loc = item['location']
-                
+                # Format date and time for display if they are datetime objects
+                date_val = loc.get('date', None)
+                time_val = loc.get('time', None)
+                date_str = date_val.strftime('%Y-%m-%d') if hasattr(date_val, 'strftime') else (str(date_val) if date_val is not None else 'N/A')
+                time_str = time_val.strftime('%H:%M:%S') if hasattr(time_val, 'strftime') else (str(time_val) if time_val is not None else 'N/A')
+                # print(date_str, time_str)
                 # Calculate smart offset position for each overlapping point (longer line)
                 label_lat, label_lon = calculate_smart_offset(base_lat, base_lon, used_positions, offset_distance=0.00012)
                 used_positions.append((label_lat, label_lon))
@@ -465,10 +469,15 @@ def create_path_map(path_idx, path_df, stop_locations):
                         icon_size=(20, 20),
                         icon_anchor=(10, 10)
                     ),
-                    popup=folium.Popup(f"Path {path_idx + 1} - Location {loc['location_number']}<br>"
-                            f"Duration: {loc.get('duration', 45):.1f} seconds<br>"
-                            f"From: {loc.get('start_time', 'N/A')}<br>"
-                            f"To: {loc.get('end_time', 'N/A')}", max_width=400)
+                    popup=folium.Popup(
+                        f"Path {path_idx + 1} - Location {loc['location_number']}<br>"
+                        f"Duration: {loc.get('duration', 45):.1f} seconds<br>"
+                        f"From: {loc.get('start_time', 'N/A')}<br>"
+                        f"To: {loc.get('end_time', 'N/A')}<br>"
+                        f"Date: {date_str}<br>"
+                        f"Time: {time_str}",
+                        max_width=400
+                    )
                 ).add_to(m)
 
     # Add layer control to toggle reference points on/off
@@ -686,7 +695,7 @@ def add_stops(file_location, timestamps_file_name, data, tolerance=1):
     This function loads a timestamps file containing exact stop times and matches them
     to corresponding data points in the main dataset. It identifies periods of zero
     speed around each timestamp and assigns the same stop number to all points in
-    that stationary period.
+    that Stop period.
     
     Args:
         file_location (str): Directory path containing the timestamps file
@@ -700,8 +709,8 @@ def add_stops(file_location, timestamps_file_name, data, tolerance=1):
     timestamps_data = pd.read_excel(os.path.join(file_location, timestamps_file_name))
     path_stops = {}
     
-    print("Original timestamps data:")
-    print(timestamps_data.head())
+    # print("Original timestamps data:")
+    # print(timestamps_data.head())
     
     # Create TIMESTAMP column from Date and Time columns
     timestamps_data["TIMESTAMP"] = pd.to_datetime(
@@ -714,14 +723,14 @@ def add_stops(file_location, timestamps_file_name, data, tolerance=1):
     # Initialize Stop column if it doesn't exist
     if 'Stop' not in data.columns:
         data['Stop'] = None
-    print(data.columns)
+    # print(data.columns)
     # Process each stop timestamp
     stop_indices = []
     for idx, row in timestamps_data.iterrows():
         cur_stop_number = row['Stop']
         target_timestamp = row['TIMESTAMP']
         
-        print(f"Processing Stop {cur_stop_number} at {target_timestamp}")
+        # print(f"Processing Stop {cur_stop_number} at {target_timestamp}")
         
         target_idx = data[data['TIMESTAMP'] == target_timestamp].index
         if(target_idx.empty):
@@ -754,10 +763,12 @@ def add_stops(file_location, timestamps_file_name, data, tolerance=1):
             'end_time': data.at[r - 1, 'TIMESTAMP'],
             'index': data.at[target_idx[0], 'PathNumber'],
             'location_number': row['Stop'],
+            'date' : data.at[selected_stop, 'TIMESTAMP'].date(),
+            'time' : data.at[selected_stop, 'TIMESTAMP'].time()
         }
         stop_indices.append(selected_stop)
 
-        print(f"Assigned Stop {cur_stop_number} to indices from {target_idx[0] + 1} to {r - 1} = {r - (target_idx[0] + 1)} (zero-speed points).")
+        # print(f"Assigned Stop {cur_stop_number} to indices from {target_idx[0] + 1} to {r - 1} = {r - (target_idx[0] + 1)} (zero-speed points).")
     return path_stops, stop_indices
 
 def calculate_average_mrt(data, stop_indices, result_folder_path, file_name):
@@ -804,7 +815,7 @@ def calculate_average_mrt(data, stop_indices, result_folder_path, file_name):
     data = data[cols]
 
     for idx in stop_indices:
-        print(idx)
+        # print(idx)
         # Get the range of indices to consider for averaging
         start_idx = max(0, idx - 3)
         end_idx = min(len(data), idx + 4)
@@ -824,12 +835,12 @@ def calculate_average_mrt(data, stop_indices, result_folder_path, file_name):
     print(f"Average MRT values saved to {output_file}")
 
 
-    #calculate the average MRT for each stop point and save it to a new column 'Stationary_Average_MRT'
+    #calculate the average MRT for each stop point and save it to a new column 'Stop_Average_MRT'
     result = pd.DataFrame()
     result['Full_DecLatitude'] = None
     result['Full_DecLongitude'] = None
     result['Stop'] = None
-    result['Stationary_Average_MRT'] = None
+    result['Stop_Average_MRT'] = None
 
     for i in range(1, 31):
         stop_rows = data[data['Stop'] == i]
@@ -838,13 +849,13 @@ def calculate_average_mrt(data, stop_indices, result_folder_path, file_name):
             result.loc[i, 'Stop'] = i
             result.loc[i, 'Full_DecLatitude'] = reference_points[i-1][0]
             result.loc[i, 'Full_DecLongitude'] = reference_points[i-1][1]
-            result.loc[i, 'Stationary_Average_MRT'] = average_mrt
+            result.loc[i, 'Stop_Average_MRT'] = average_mrt
         else:
             print(f"No data found for Stop {i}, skipping.")
-    # Save the updated DataFrame with  Average Stationary point MRT to a new Excel file
+    # Save the updated DataFrame with  Average Stop point MRT to a new Excel file
     output_file = os.path.join(result_folder_path, str("AVG_STOP_" + file_name))
     result.to_excel(output_file, index=False)
-    print(f"Average Stationary MRT values saved to {output_file}")
+    print(f"Average Stop MRT values saved to {output_file}")
 
 def convert_gmt_to_cst(data):
     """
@@ -870,17 +881,10 @@ def convert_gmt_to_cst(data):
 
 def calculate_utci(data):
     """
-    Calculate the Universal Thermal Climate Index (UTCI) for a single data point.
-    
-    This function calculates UTCI using air temperature, mean radiant temperature,
-    relative humidity, and derived vapor pressure. It handles missing values by
-    returning NaN when required columns are unavailable.
-    
-    Args:
-        data (pandas.Series): A row of data containing meteorological values
-        
-    Returns:
-        float: Calculated UTCI in Celsius, or NaN if any required values are missing
+    Calculates the Universal Thermal Climate Index (UTCI) for a single data point.
+
+    Uses air temperature (Fahrenheit), mean radiant temperature, relative humidity,
+    and wind speed to compute UTCI. Returns NaN if any required value is missing.
     """
     # Required columns for UTCI calculation
     required_columns = ['AirTmpF', 'MRT', 'RH', 'MS_WS_ms']
@@ -891,27 +895,27 @@ def calculate_utci(data):
         return float('nan')
     
     try:
-        print(float(data['AirTmpF']), float(data['MRT']), float(data['RH']), float(data['MS_WS_ms']))
+        # print(float(data['AirTmpF']), float(data['MRT']), float(data['RH']), float(data['MS_WS_ms']))
         taF = float(data['AirTmpF'])
         taC = (taF - 32) * 5/9
-        print(f"Converted AirTmpF: {taF} to Celsius: {taC}")
+        # print(f"Converted AirTmpF: {taF} to Celsius: {taC}")
         
         mrt = float(data['MRT'])
-        print(f"Mean Radiant Temperature (MRT): {mrt}")
+        # print(f"Mean Radiant Temperature (MRT): {mrt}")
 
         rh = float(data['RH'])
-        print(f"Relative Humidity (RH): {rh}")
+        # print(f"Relative Humidity (RH): {rh}")
         
         # Calculate vapor pressure
         vp = rh_to_vp(taC, rh)
-        print(f"Calculated Vapor Pressure (VP): {vp} hPa")
+        # print(f"Calculated Vapor Pressure (VP): {vp} hPa")
 
         va = float(data['MS_WS_ms'])
-        print(f"Wind Speed (VA): {va} m/s")
+        # print(f"Wind Speed (VA): {va} m/s")
 
         # Calculate UTCI
         utci_val = utci_approx(taC, vp, mrt, va)
-        print(f"Calculated UTCI: {utci_val} for AirTmpF: {taF}, MRT: {mrt}, RH: {rh}")
+        # print(f"Calculated UTCI: {utci_val} for AirTmpF: {taF}, MRT: {mrt}, RH: {rh}")
         
         return utci_val
         
@@ -921,17 +925,9 @@ def calculate_utci(data):
 
 def calculate_thermal_stress(data):
     """
-    Calculate thermal stress category based on UTCI value.
-    
-    This function categorizes UTCI values into thermal stress categories according
-    to established ranges. It handles missing values by returning NaN when the
-    UTCI column is unavailable.
-    
-    Args:
-        data (pandas.Series): A row of data containing UTCI value
-        
-    Returns:
-        str: Thermal stress category name, or NaN if UTCI is missing
+    Categorizes UTCI value into thermal stress category.
+
+    Returns the thermal stress category name for the UTCI value, or NaN if UTCI is missing.
     """
     # Required columns for thermal stress calculation
     required_columns = ['UTCI']
@@ -956,20 +952,16 @@ def calculate_thermal_stress(data):
 
 def main():
     """
-    Main processing function that orchestrates the complete MRT analysis workflow.
-    
-    This function serves as the primary entry point and coordinates all analysis steps:
-    1. Processes all Excel files in the data directory
-    2. Converts timestamps from GMT to CST
-    3. Calculates MRT values for each data point
-    4. Splits data into separate paths based on NaN values
-    5. Identifies stop measurement locations along each path
-    6. Creates interactive maps for visualization
-    7. Calculates and saves average MRT values
-    8. Saves processed data with path and location assignments
-    
-    The function handles multiple files automatically and creates organized output
-    directories for each processed dataset.
+    Main processing function for MRT and UTCI analysis workflow.
+
+    - Processes all Excel files in the data directory
+    - Converts timestamps from GMT to CST
+    - Calculates MRT, UTCI, and thermal stress for each data point
+    - Splits data into separate paths
+    - Identifies stop measurement locations
+    - Creates interactive maps
+    - Calculates and saves average MRT values
+    - Saves processed data with path and location assignments
     """
     """Main function to process all Excel files and calculate MRT with stop locations."""
     for file in os.listdir(file_location):
