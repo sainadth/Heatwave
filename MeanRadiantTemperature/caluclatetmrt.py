@@ -244,10 +244,30 @@ def create_path_map(path_idx, path_df, stop_locations):
     # Create map
     m = folium.Map(location=[map_center['lat'], map_center['lon']], zoom_start=zoom_level)
 
-    # Add enhanced legend in top left corner to avoid overlapping with layer control
+    # Convert stop_locations dict to list for compatibility
+    if isinstance(stop_locations, dict):
+        stop_locations_list = list(stop_locations.values())
+    else:
+        stop_locations_list = stop_locations
+
+    # Prepare HTML for all stops to add to legend
+    stops_html = ""
+    for loc in stop_locations_list:
+        date_val = loc.get('date', None)
+        time_val = loc.get('time', None)
+        date_str = date_val.strftime('%Y-%m-%d') if hasattr(date_val, 'strftime') else (str(date_val) if date_val is not None else 'N/A')
+        time_str = time_val.strftime('%H:%M:%S') if hasattr(time_val, 'strftime') else (str(time_val) if time_val is not None else 'N/A')
+        stops_html += (
+            f"<div style='margin: 2px 0; font-size:11px;'>"
+            f"<b>Stop {loc['location_number']}</b>: "
+            f"Date: {date_str}, Time: {time_str}"
+            f"</div>"
+        )
+
+    # Limit legend height and make stops scrollable if needed
     path_legend_html = f'''
     <div style="position: fixed; 
-                top: 10px; left: 10px; width: 200px; min-height: 180px; 
+                top: 10px; left: 10px; width: 220px; max-height: 90vh; overflow-y: auto;
                 background-color: white; border:2px solid grey; z-index:9999; 
                 font-size:12px; color: #333;
                 padding: 10px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
@@ -281,6 +301,11 @@ def create_path_map(path_idx, path_df, stop_locations):
         
         <div style="margin-top: 10px; font-size: 10px; color: #7f8c8d; text-align: center;">
             Toggle layers using the control panel
+        </div>
+        <hr style="margin: 5px 0; border: 1px solid #eee;">
+        <div style="margin-top: 5px; max-height: 40vh; overflow-y: auto;">
+            <b>Stops:</b>
+            {stops_html}
         </div>
     </div>
     '''
@@ -418,8 +443,6 @@ def create_path_map(path_idx, path_df, stop_locations):
                 ),
                 popup=folium.Popup(f"Path {path_idx + 1} - Location {loc['location_number']}<br>"
                         f"Duration: {loc.get('duration', 45):.1f} seconds<br>"
-                        f"From: {loc.get('start_time', 'N/A')}<br>"
-                        f"To: {loc.get('end_time', 'N/A')}<br>"
                         f"Date: {date_str}<br>"
                         f"Time: {time_str}", max_width=400)
             ).add_to(m)
@@ -472,8 +495,6 @@ def create_path_map(path_idx, path_df, stop_locations):
                     popup=folium.Popup(
                         f"Path {path_idx + 1} - Location {loc['location_number']}<br>"
                         f"Duration: {loc.get('duration', 45):.1f} seconds<br>"
-                        f"From: {loc.get('start_time', 'N/A')}<br>"
-                        f"To: {loc.get('end_time', 'N/A')}<br>"
                         f"Date: {date_str}<br>"
                         f"Time: {time_str}",
                         max_width=400
@@ -759,12 +780,10 @@ def add_stops(file_location, timestamps_file_name, data, tolerance=1):
             'Full_DecLatitude': data.at[selected_stop, 'Full_DecLatitude'],
             'Full_DecLongitude': data.at[selected_stop, 'Full_DecLongitude'],
             'duration': 45,
-            'start_time': data.at[l + 1, 'TIMESTAMP'],
-            'end_time': data.at[r - 1, 'TIMESTAMP'],
             'index': data.at[target_idx[0], 'PathNumber'],
             'location_number': row['Stop'],
             'date' : data.at[selected_stop, 'TIMESTAMP'].date(),
-            'time' : data.at[selected_stop, 'TIMESTAMP'].time()
+            'time' : pd.to_datetime(row['TIMESTAMP']).time()
         }
         stop_indices.append(selected_stop)
 
@@ -1003,8 +1022,9 @@ def main():
 
             # Reorder columns to put MRT at position 1 (2nd position)
             cols = data.columns.tolist()
-            cols.remove('MRT')
-            cols.insert(2, 'MRT')
+            if 'MRT' in cols:
+                cols.remove('MRT')
+            cols.insert(1, 'MRT')
             data = data[cols]
 
             # check(data)
@@ -1018,8 +1038,9 @@ def main():
             
             # Reorder columns to put UTCI at position 3 (4th position)
             cols = data.columns.tolist()
-            cols.remove('UTCI')
-            cols.insert(3, 'UTCI')
+            if 'UTCI' in cols:
+                cols.remove('UTCI')
+            cols.insert(2, 'UTCI')
             data = data[cols]
             #################################################################################################
             
@@ -1030,8 +1051,9 @@ def main():
 
             # Reorder columns to put ThermalStress at position 4 (5th position)
             cols = data.columns.tolist()
-            cols.remove('ThermalStress')
-            cols.insert(4, 'ThermalStress')
+            if 'ThermalStress' in cols:
+                cols.remove('ThermalStress')
+            cols.insert(3, 'ThermalStress')
             data = data[cols]
             #################################################################################################
 
@@ -1040,9 +1062,17 @@ def main():
             paths, nan_rows = split_paths(data)
             print(f"Split data into {len(paths)} paths.")
 
-            # Add columns for path and stop point
+            # Add columns for path and stop point after TIMESTAMP
+            cols = data.columns.tolist()
+            if 'PathNumber' in cols:
+                cols.remove('PathNumber')
+            if 'Stop' in cols:
+                cols.remove('Stop')
+            cols.insert(1, 'PathNumber')
+            cols.insert(2, 'Stop')
             data['PathNumber'] = ''
             data['Stop'] = ''
+            data = data[cols]
 
             # Initialize all PathNumber values first
             current_path_number = 1
@@ -1073,7 +1103,7 @@ def main():
             # Save the updated dataframe with new columns
             data.to_excel(os.path.join(result_folder_path, file), index=False, na_rep='NaN')
             print(f"Processed {file} and saved to {result_folder_path}")
-            #################################################################################################
+            ################################################################### ##############################
 
             #################################################################################################
             calculate_average_mrt(data, stop_indices, result_folder_path, file)
