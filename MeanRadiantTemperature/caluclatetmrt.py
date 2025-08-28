@@ -6,6 +6,7 @@ import os
 import folium
 from math import radians, sin, cos, sqrt, asin
 from utci import utci_approx, rh_to_vp
+from biometeo import mPET
 
 file_location = '../data/'
 results_location = '../results/'
@@ -941,6 +942,49 @@ def calculate_utci(data):
     except Exception as e:
         # Return NaN for consistency
         return float('nan')
+    
+def calculate_pet(data):
+    """
+    Calculates the Potential Evapotranspiration (PET) for a single data point.
+
+    Uses air temperature (Fahrenheit), relative humidity, and wind speed to compute PET.
+    Returns NaN if any required value is missing.
+    """
+    # Required columns for PET calculation
+    required_columns = ['AirTmpF', 'MRT', 'RH', 'MS_WS_ms']
+
+    # Check if any required column contains NaN
+    if any(pd.isnull(data[col]) for col in required_columns):
+        return float('nan')
+
+    try:
+        # print(float(data['AirTmpF']), float(data['MRT']), float(data['RH']), float(data['MS_WS_ms']))
+        taF = float(data['AirTmpF'])
+        taC = (taF - 32) * 5/9
+        # print(f"Converted AirTmpF: {taF} to Celsius: {taC}")
+        
+        mrt = float(data['MRT'])
+        # print(f"Mean Radiant Temperature (MRT): {mrt}")
+
+        rh = float(data['RH'])
+        # print(f"Relative Humidity (RH): {rh}")
+        
+        # Calculate vapor pressure
+        vp = rh_to_vp(taC, rh)
+        # print(f"Calculated Vapor Pressure (VP): {vp} hPa")
+
+        va = float(data['MS_WS_ms'])
+        # print(f"Wind Speed (VA): {va} m/s")
+
+        # Calculate UTCI
+        pet_val = mPET(Ta=taC, VP=vp, Tmrt=mrt, v=va, icl=0.5, ht=1.7, age=35, sex=1, pos=1)['mPET']
+        # print(f"Calculated UTCI: {utci_val} for AirTmpF: {taF}, MRT: {mrt}, RH: {rh}")
+        print(f"Calculated PET: {pet_val} for AirTmpF: {taF}, MRT: {mrt}, RH: {rh}")
+        return pet_val
+
+    except Exception as e:
+        # Return NaN for consistency
+        return float('nan')
 
 def calculate_thermal_stress(data):
     """
@@ -1054,6 +1098,18 @@ def main():
             if 'ThermalStress' in cols:
                 cols.remove('ThermalStress')
             cols.insert(3, 'ThermalStress')
+            data = data[cols]
+            #################################################################################################
+            
+            #################################################################################################
+            data['PET'] = data.apply(calculate_pet, axis=1)
+            print("PET calculated and added to the dataframe.")
+
+            # Reorder columns to put PET at position 4 (5th position)
+            cols = data.columns.tolist()
+            if 'PET' in cols:
+                cols.remove('PET')
+            cols.insert(4, 'PET')
             data = data[cols]
             #################################################################################################
 
