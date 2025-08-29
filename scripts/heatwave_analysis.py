@@ -8,7 +8,7 @@ from utci import utci_approx, rh_to_vp
 from biometeo import mPET
 
 file_location = '../data/'
-results_location = '../results/'
+results_location = '../output/'
 
 # 6-directional radiation flux densities (W/m^2)
 
