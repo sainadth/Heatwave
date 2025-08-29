@@ -1,6 +1,5 @@
-# Calculate Mean Radiant Temperature (MRT)
+# MRT, UTCI, PET, and Stop Location Analysis for Heatwave Project
 
-# Read the csv file in data folder and add new column for MRT and save it
 import pandas as pd
 import os
 import folium
@@ -11,7 +10,7 @@ from biometeo import mPET
 file_location = '../data/'
 results_location = '../results/'
 
-# 6 direction radiation flux densities (K, L) W/m^2
+# 6-directional radiation flux densities (W/m^2)
 
 #Back
 back_shortwave = "BckSW"
@@ -37,14 +36,14 @@ up_longwave = "UpLWCo"
 down_shortwave = "DnSW"
 down_longwave = "DnLWCo" 
 
-# Absorption coefficients (ak, al)
+# Absorption coefficients for shortwave and longwave
 absorption_coefficient_shortwave = 0.7
 absorption_coefficient_longwave = 0.97
 
-# stefan-boltzmann constant (σ)
+# Stefan-Boltzmann constant
 stefan_boltzmann_constant = 5.670374419e-8  # W/m^2/K^4
 
-# angular coefficients (W)
+# Angular coefficients for body orientation
 angular_coefficient_back = 0.22
 angular_coefficient_front = 0.22
 angular_coefficient_left = 0.22
@@ -52,7 +51,7 @@ angular_coefficient_right = 0.22
 angular_coefficient_up = 0.06
 angular_coefficient_down = 0.06
 
-# Thermal Stress Categories
+# UTCI thermal stress categories
 
 thermal_stress_categories = {
     "Extreme heat stress": [47, float('inf')],
@@ -68,7 +67,7 @@ thermal_stress_categories = {
 }
 
 
-# route followed
+# Reference GPS points for walking route
 reference_points = [
     (27.7129249, -97.3260006), #1
     (27.7127061, -97.3260539), #2
@@ -105,11 +104,8 @@ reference_points = [
 
 def extract_folder_name(file_path):
     """
-    Extracts the folder name from the file path and creates a results directory.
-    
-    This function takes a file path containing 'Marty_' in the name, extracts the portion
-    after 'Marty_' and before the file extension to create a unique folder name for storing
-    results. If the folder doesn't exist, it creates it.
+    Extracts results folder name from file path and creates directory if needed.
+    Used for organizing output files per input dataset.
     
     Args:
         file_path (str): Path to the input file containing 'Marty_' in the name
@@ -127,7 +123,8 @@ def extract_folder_name(file_path):
 
 def calculate_tmrt(data):
     """
-    Calculates the Mean Radiant Temperature (MRT) for a single data point.
+    Calculate Mean Radiant Temperature (MRT) for a row using 6-directional fluxes.
+    Returns NaN if any required value is missing.
 
     Implements the MRT calculation formula using 6-directional radiation
     flux densities (shortwave and longwave), absorption coefficients, angular coefficients,
@@ -169,6 +166,9 @@ def calculate_tmrt(data):
 
 def check(data):
     """
+    Compare calculated MRT values with existing Tmrt column for validation.
+    Prints mismatched indices if any.
+
     Validates calculated MRT values against existing Tmrt values in the dataset.
     
     This function compares the newly calculated 'MRT' column with an existing 'Tmrt'
@@ -194,6 +194,9 @@ def check(data):
 
 def split_paths(data):
     """
+    Split dataset into separate walking paths using rows with NaN values.
+    Returns list of path segments and indices of NaN rows.
+
     Splits the dataset into separate paths based on NaN values.
     
     This function identifies rows containing NaN values in any column and uses them
@@ -223,6 +226,10 @@ def split_paths(data):
 
 def create_path_map(path_idx, path_df, stop_locations):
     """
+    Create interactive Folium map for a path, showing route, reference points, and stop locations.
+    Handles overlapping stop locations with extension lines.
+    Returns Folium Map object.
+
     Creates an interactive Folium map visualization for a specific path with stop locations.
     
     This function generates a detailed map showing the walking path as a blue line,
@@ -310,7 +317,7 @@ def create_path_map(path_idx, path_df, stop_locations):
         </div>
     </div>
     '''
-    m.get_root().html.add_child(folium.Element(path_legend_html))
+    m.get_root().add_child(folium.Element(path_legend_html))
 
     # Create a feature group for reference points (as a toggleable layer, unselected by default)
     reference_layer = folium.FeatureGroup(name="Reference Points", show=False)
@@ -509,6 +516,18 @@ def create_path_map(path_idx, path_df, stop_locations):
 
 
 def haversine(lat1, lon1, lat2, lon2):
+    """
+    Calculate great-circle distance (meters) between two lat/lon points.
+
+    Haversine formula to calculate the distance between two points on the Earth's surface
+    specified by their latitude and longitude. Returns the distance in meters.
+    
+    Args:
+        lat1, lon1, lat2, lon2 (float): Latitude and longitude of the two points in decimal degrees
+        
+    Returns:
+        float: Distance between the two points in meters
+    """
     R = 6371000
     phi1, phi2 = radians(lat1), radians(lat2)
     dphi = radians(lat2 - lat1)
@@ -519,6 +538,9 @@ def haversine(lat1, lon1, lat2, lon2):
 
 def find_stop_locations(path, window_size=10, reference_points=reference_points):
     """
+    Match GPS points to reference points along a path, maintaining order.
+    Returns list of location dicts and mapping of indices to location numbers.
+
     Identifies stop measurement locations along a path by matching them to reference points.
     
     This function uses an optimal assignment algorithm to match actual GPS coordinates from
@@ -712,6 +734,10 @@ def find_stop_locations(path, window_size=10, reference_points=reference_points)
 
 def add_stops(file_location, timestamps_file_name, data, tolerance=1):
     """
+    Assign stop numbers to data points based on timestamps from a file.
+    Expands assignment to zero-speed points around each timestamp.
+    Returns dict of stop locations and list of stop indices.
+
     Assigns stop numbers to data points based on exact timestamps from a timestamps file.
     
     This function loads a timestamps file containing exact stop times and matches them
@@ -793,6 +819,9 @@ def add_stops(file_location, timestamps_file_name, data, tolerance=1):
 
 def calculate_average_mrt(data, stop_indices, result_folder_path, file_name):
     """
+    Calculate average MRT for stop points (local and global averages).
+    Saves results to Excel files.
+
     Calculates average MRT values for stop points and saves results to Excel files.
     
     This function performs two types of averaging:
@@ -879,6 +908,8 @@ def calculate_average_mrt(data, stop_indices, result_folder_path, file_name):
 
 def convert_gmt_to_cst(data):
     """
+    Convert TIMESTAMP column from GMT/UTC to US/Central timezone.
+
     Converts timestamp data from GMT (Greenwich Mean Time) to CST (Central Standard Time).
     
     This function handles timezone conversion for the TIMESTAMP column, converting from
@@ -901,6 +932,9 @@ def convert_gmt_to_cst(data):
 
 def calculate_utci(data):
     """
+    Calculate UTCI for a row using air temp, MRT, RH, and wind speed.
+    Returns NaN if any required value is missing.
+
     Calculates the Universal Thermal Climate Index (UTCI) for a single data point.
 
     Uses air temperature (Fahrenheit), mean radiant temperature, relative humidity,
@@ -945,6 +979,9 @@ def calculate_utci(data):
     
 def calculate_pet(data):
     """
+    Calculate PET for a row using air temp, MRT, RH, and wind speed.
+    Returns NaN if any required value is missing.
+
     Calculates the Potential Evapotranspiration (PET) for a single data point.
 
     Uses air temperature (Fahrenheit), relative humidity, and wind speed to compute PET.
@@ -988,6 +1025,9 @@ def calculate_pet(data):
 
 def calculate_thermal_stress(data):
     """
+    Categorize UTCI value into thermal stress category.
+    Returns category name or NaN if UTCI missing.
+
     Categorizes UTCI value into thermal stress category.
 
     Returns the thermal stress category name for the UTCI value, or NaN if UTCI is missing.
@@ -1015,16 +1055,15 @@ def calculate_thermal_stress(data):
 
 def main():
     """
-    Main processing function for MRT and UTCI analysis workflow.
-
-    - Processes all Excel files in the data directory
-    - Converts timestamps from GMT to CST
-    - Calculates MRT, UTCI, and thermal stress for each data point
-    - Splits data into separate paths
-    - Identifies stop measurement locations
-    - Creates interactive maps
-    - Calculates and saves average MRT values
-    - Saves processed data with path and location assignments
+    Main workflow for Heatwave Project:
+    - Processes Excel files in data directory
+    - Converts timestamps
+    - Calculates MRT, UTCI, PET, and thermal stress
+    - Splits data into paths
+    - Assigns stop locations
+    - Creates maps
+    - Calculates and saves average MRT
+    - Saves processed data
     """
     """Main function to process all Excel files and calculate MRT with stop locations."""
     for file in os.listdir(file_location):
