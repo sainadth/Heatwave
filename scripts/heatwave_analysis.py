@@ -66,42 +66,6 @@ thermal_stress_categories = {
     "Extreme cold stress": [-float('inf'), -40]
 }
 
-
-# Reference GPS points for walking route
-reference_points = [
-    (27.7129249, -97.3260006), #1
-    (27.7127061, -97.3260539), #2
-    (27.7122306, -97.3251876), #3
-    (27.7121665, -97.3248929), #4
-    (27.7119789, -97.3246257), #5
-    (27.7122368, -97.3238686), #6
-    (27.71259385702372, -97.32426121800366), #7
-    (27.712579016168924, -97.32446774809237), #8
-    (27.7127601, -97.3245294), #9
-    (27.71308301047632, -97.3246447738855), #10
-    (27.713303578977833, -97.32452105765262), #11
-    (27.7132567, -97.3241851), #12
-    (27.7130994, -97.3238197), #13
-    (27.7133671, -97.3232363), #14
-    (27.7136927, -97.3230998), #15
-    (27.7138313, -97.3236192), #16
-    (27.7140723, -97.3240604), #17
-    (27.7140427, -97.3241620), #18
-    (27.7144033, -97.3239575), #19
-    (27.714307733244528, -97.32375736803056), #(27.7143424, -97.3237791), #20
-    (27.71443654975673, -97.3237097588214), # (27.7144181, -97.3237087), #21
-    (27.71439084068967, -97.32359509439443), #22
-    (27.7150817660244, -97.32362061669737), # (27.7151139, -97.3235997), #23
-    (27.7152931, -97.3235400), #24
-    (27.7149058, -97.3241214), #25
-    (27.7146980, -97.3242367), #26
-    (27.7142181, -97.3247055), #27
-    (27.7140186, -97.3255118), #28
-    (27.7137411, -97.3256684), #29
-    (27.7129249, -97.3260006), #30
-]
-
-
 def extract_folder_name(file_path):
     """
     Extracts results folder name from file path and creates directory if needed.
@@ -163,7 +127,7 @@ def calculate_tmrt(data):
     except Exception as e:
         # Return NaN for consistency
         return float('nan')
-
+'''
 def check(data):
     """
     Compare calculated MRT values with existing Tmrt column for validation.
@@ -191,6 +155,7 @@ def check(data):
             # print the values that do not match
             mismatched_indices = mrt_values[mrt_values != tmrt_values].index
             print(f"Mismatched indices: {mismatched_indices.tolist()}")
+'''
 
 def split_paths(data):
     """
@@ -257,20 +222,11 @@ def create_path_map(path_idx, path_df, stop_locations):
         stop_locations_list = list(stop_locations.values())
     else:
         stop_locations_list = stop_locations
-
-    # Prepare HTML for all stops to add to legend
-    stops_html = ""
-    for loc in stop_locations_list:
-        date_val = loc.get('date', None)
-        time_val = loc.get('time', None)
-        date_str = date_val.strftime('%Y-%m-%d') if hasattr(date_val, 'strftime') else (str(date_val) if date_val is not None else 'N/A')
-        time_str = time_val.strftime('%H:%M:%S') if hasattr(time_val, 'strftime') else (str(time_val) if time_val is not None else 'N/A')
-        stops_html += (
-            f"<div style='margin: 2px 0; font-size:11px;'>"
-            f"<b>Stop {loc['location_number']}</b>: "
-            f"Date: {date_str}, Time: {time_str}"
-            f"</div>"
-        )
+    
+    # Fetch start datetime and end datetime
+    start_datetime = path_df['TIMESTAMP'].min().strftime('%H:%M:%S')
+    end_datetime = path_df['TIMESTAMP'].max().strftime('%H:%M:%S')
+    date_str = path_df['TIMESTAMP'].min().strftime('%m-%d-%Y')
 
     # Limit legend height and make stops scrollable if needed
     path_legend_html = f'''
@@ -280,8 +236,10 @@ def create_path_map(path_idx, path_df, stop_locations):
                 font-size:12px; color: #333;
                 padding: 10px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
         <h4 style="margin: 0 0 10px 0; text-align: center; font-size: 16px; font-weight: bold; color: #2c3e50;">Path {path_idx + 1}</h4>
+        <h4 style="margin: 0 0 10px 0; text-align: center; font-size: 16px; font-weight: bold; color: #2c3e50;">Date {date_str}</h4>
+        <h4 style="margin: 0 0 10px 0; text-align: center; font-size: 16px; font-weight: bold; color: #2c3e50;">Time {start_datetime} - {end_datetime}</h4>
         <hr style="margin: 5px 0; border: 1px solid #bdc3c7;">
-        
+
         <div style="margin: 5px 0; display: flex; align-items: center;">
             <div style="width: 20px; height: 3px; background-color: blue; margin-right: 8px;"></div>
             <span>Walking Path</span>
@@ -301,41 +259,9 @@ def create_path_map(path_idx, path_df, stop_locations):
             <div style="width: 12px; height: 12px; background-color: purple; border-radius: 50%; border: 1px solid white; margin-right: 8px; color: white; font-size: 8px; text-align: center; line-height: 10px;">1</div>
             <span>Stop Locations</span>
         </div>
-        
-        <div style="margin: 5px 0; display: flex; align-items: center;">
-            <div style="width: 12px; height: 12px; background-color: yellow; border: 1px solid red; border-radius: 50%; margin-right: 8px; color: black; font-size: 8px; text-align: center; line-height: 10px;">R</div>
-            <span>Reference Points</span>
-        </div>
-        
-        <div style="margin-top: 10px; font-size: 10px; color: #7f8c8d; text-align: center;">
-            Toggle layers using the control panel
-        </div>
-        <hr style="margin: 5px 0; border: 1px solid #eee;">
-        <div style="margin-top: 5px; max-height: 40vh; overflow-y: auto;">
-            <b>Stops:</b>
-            {stops_html}
-        </div>
     </div>
     '''
-    m.get_root().add_child(folium.Element(path_legend_html))
-
-    # Create a feature group for reference points (as a toggleable layer, unselected by default)
-    reference_layer = folium.FeatureGroup(name="Reference Points", show=False)
-    
-    # Add reference points to the layer
-    for i, (lat, lon) in enumerate(reference_points):
-        folium.Marker(
-            [lat, lon],
-            icon=folium.DivIcon(
-                html=f'<div style="font-size: 10px; font-weight: bold; color: black; background-color: yellow; border: 2px solid red; border-radius: 50%; width: 18px; height: 18px; text-align: center; line-height: 14px;">{i+1}</div>',
-                icon_size=(18, 18),
-                icon_anchor=(9, 9)
-            ),
-            popup=folium.Popup(f"Reference Point {i+1}", max_width=300)
-        ).add_to(reference_layer)
-    
-    # Add the reference layer to the map
-    reference_layer.add_to(m)
+    m.get_root().html.add_child(folium.Element(path_legend_html))
 
     path = path_df.copy()
     path.dropna(subset=['Full_DecLatitude', 'Full_DecLongitude', 'TIMESTAMP'], inplace=True)
@@ -440,6 +366,11 @@ def create_path_map(path_idx, path_df, stop_locations):
             time_val = loc.get('time', None)
             date_str = date_val.strftime('%Y-%m-%d') if hasattr(date_val, 'strftime') else (str(date_val) if date_val is not None else 'N/A')
             time_str = time_val.strftime('%H:%M:%S') if hasattr(time_val, 'strftime') else (str(time_val) if time_val is not None else 'N/A')
+            starttime_val = loc.get('start_time', None)
+            endtime_val = loc.get('end_time', None)
+            starttime_str = starttime_val.strftime('%H:%M:%S') if hasattr(starttime_val, 'strftime') else (str(starttime_val) if starttime_val is not None else 'N/A')
+            endtime_str = endtime_val.strftime('%H:%M:%S') if hasattr(endtime_val, 'strftime') else (str(endtime_val) if endtime_val is not None else 'N/A')
+            duration = (endtime_val - starttime_val).total_seconds() if starttime_val and endtime_val else 45
             # print(date_str, time_str)
             # Numbered marker directly on the path point
             folium.Marker(
@@ -449,10 +380,13 @@ def create_path_map(path_idx, path_df, stop_locations):
                     icon_size=(20, 20),
                     icon_anchor=(10, 10)
                 ),
-                popup=folium.Popup(f"Path {path_idx + 1} - Location {loc['location_number']}<br>"
-                        f"Duration: {loc.get('duration', 45):.1f} seconds<br>"
-                        f"Date: {date_str}<br>"
-                        f"Time: {time_str}", max_width=400)
+                popup=folium.Popup(
+                    f"Path {path_idx + 1} - Location {loc['location_number']}<br>"
+                    f"Start Time: {starttime_str}<br>"
+                    f"End Time: {endtime_str}<br>"
+                    f"Duration: {duration:.1f} seconds",
+                    max_width=400
+                )
             ).add_to(m)
             
         else:
@@ -479,6 +413,12 @@ def create_path_map(path_idx, path_df, stop_locations):
                 time_val = loc.get('time', None)
                 date_str = date_val.strftime('%Y-%m-%d') if hasattr(date_val, 'strftime') else (str(date_val) if date_val is not None else 'N/A')
                 time_str = time_val.strftime('%H:%M:%S') if hasattr(time_val, 'strftime') else (str(time_val) if time_val is not None else 'N/A')
+
+                starttime_val = loc.get('start_time', None)
+                endtime_val = loc.get('end_time', None)
+                starttime_str = starttime_val.strftime('%H:%M:%S') if hasattr(starttime_val, 'strftime') else (str(starttime_val) if starttime_val is not None else 'N/A')
+                endtime_str = endtime_val.strftime('%H:%M:%S') if hasattr(endtime_val, 'strftime') else (str(endtime_val) if endtime_val is not None else 'N/A')
+                duration = (endtime_val - starttime_val).total_seconds() if starttime_val and endtime_val else 45
                 # print(date_str, time_str)
                 # Calculate smart offset position for each overlapping point (longer line)
                 label_lat, label_lon = calculate_smart_offset(base_lat, base_lon, used_positions, offset_distance=0.00012)
@@ -502,16 +442,12 @@ def create_path_map(path_idx, path_df, stop_locations):
                     ),
                     popup=folium.Popup(
                         f"Path {path_idx + 1} - Location {loc['location_number']}<br>"
-                        f"Duration: {loc.get('duration', 45):.1f} seconds<br>"
-                        f"Date: {date_str}<br>"
-                        f"Time: {time_str}",
+                        f"Start Time: {starttime_str}<br>"
+                        f"End Time: {endtime_str}<br>"
+                        f"Duration: {duration:.1f} seconds",
                         max_width=400
                     )
                 ).add_to(m)
-
-    # Add layer control to toggle reference points on/off
-    folium.LayerControl().add_to(m)
-
     return m
 
 
@@ -535,7 +471,7 @@ def haversine(lat1, lon1, lat2, lon2):
     a = sin(dphi/2)**2 + cos(phi1)*cos(phi2)*sin(dlambda/2)**2
     return 2 * R * asin(sqrt(a))
 
-
+'''
 def find_stop_locations(path, window_size=10, reference_points=reference_points):
     """
     Match GPS points to reference points along a path, maintaining order.
@@ -731,6 +667,7 @@ def find_stop_locations(path, window_size=10, reference_points=reference_points)
     
     print(f"Successfully assigned {len(path_ref_pairs)} out of {n_stops} reference points")
     return locations, stop_indices
+'''
 
 def add_stops(file_location, timestamps_file_name, data, tolerance=1):
     """
@@ -789,18 +726,19 @@ def add_stops(file_location, timestamps_file_name, data, tolerance=1):
 
         data.at[target_idx[0], 'Stop'] = cur_stop_number
         r = target_idx[0] + 1
-        cnt = 1
-        while r < len(data) and cnt < 22 and data.at[r, 'Speed'] == 0:
+        # cnt = 1
+        while r < len(data) and data.at[r, 'Speed'] == 0:
             # Assign stop number to all points with zero speed after the target timestamp
             data.at[r, 'Stop'] = cur_stop_number
             r += 1
-            cnt += 1
+            # cnt += 1
         l = target_idx[0] - 1
-        while l >= 0 and cnt < 22 and data.at[l, 'Speed'] == 0:
+        while l >= 0 and data.at[l, 'Speed'] == 0:
             # Assign stop number to all points with zero speed before the target timestamp
             data.at[l, 'Stop'] = cur_stop_number
             l -= 1
-            cnt += 1
+            # cnt += 1
+        # print(data.at[l + 1, 'TIMESTAMP'], " to ", data.at[r - 1, 'TIMESTAMP'], f" assigned to Stop {cur_stop_number}")
         selected_stop = (l + r) // 2 # in the center
         path_stops[data.at[target_idx[0], 'PathNumber']] = path_stops.get(data.at[target_idx[0], 'PathNumber'], {})
         path_stops[data.at[target_idx[0], 'PathNumber']][row['Stop']] = {
@@ -809,12 +747,12 @@ def add_stops(file_location, timestamps_file_name, data, tolerance=1):
             'duration': 45,
             'index': data.at[target_idx[0], 'PathNumber'],
             'location_number': row['Stop'],
+            'start_time': pd.to_datetime(data.at[l + 1, 'TIMESTAMP']),
+            'end_time' : pd.to_datetime(data.at[r - 1, 'TIMESTAMP']),
             'date' : data.at[selected_stop, 'TIMESTAMP'].date(),
             'time' : pd.to_datetime(row['TIMESTAMP']).time()
         }
         stop_indices.append(selected_stop)
-
-        # print(f"Assigned Stop {cur_stop_number} to indices from {target_idx[0] + 1} to {r - 1} = {r - (target_idx[0] + 1)} (zero-speed points).")
     return path_stops, stop_indices
 
 def calculate_average_mrt(data, stop_indices, result_folder_path, file_name):
@@ -896,11 +834,12 @@ def calculate_average_mrt(data, stop_indices, result_folder_path, file_name):
         if not stop_rows.empty:
             average_mrt = stop_rows['Average_MRT'].mean()
             result.loc[i, 'Stop'] = i
-            result.loc[i, 'Full_DecLatitude'] = reference_points[i-1][0]
-            result.loc[i, 'Full_DecLongitude'] = reference_points[i-1][1]
+            result.loc[i, 'Full_DecLatitude'] = stop_rows['Full_DecLatitude'].mean()
+            result.loc[i, 'Full_DecLongitude'] = stop_rows['Full_DecLongitude'].mean()
             result.loc[i, 'Stop_Average_MRT'] = average_mrt
         else:
             print(f"No data found for Stop {i}, skipping.")
+
     # Save the updated DataFrame with  Average Stop point MRT to a new Excel file
     output_file = os.path.join(result_folder_path, str("AVG_STOP_" + file_name))
     result.to_excel(output_file, index=False)
@@ -928,7 +867,6 @@ def convert_gmt_to_cst(data):
         data['TIMESTAMP'] = pd.to_datetime(data['TIMESTAMP'], errors='coerce', utc=True, format='%m/%d/%Y %H:%M')
         data['TIMESTAMP'] = data['TIMESTAMP'].dt.tz_convert('US/Central').dt.tz_localize(None)  
     return data
-
 
 def calculate_utci(data):
     """
@@ -1141,16 +1079,16 @@ def main():
             #################################################################################################
             
             #################################################################################################
-            data['PET'] = data.apply(calculate_pet, axis=1)
-            print("PET calculated and added to the dataframe.")
+            # data['PET'] = data.apply(calculate_pet, axis=1)
+            # print("PET calculated and added to the dataframe.")
 
-            # Reorder columns to put PET at position 4 (5th position)
-            cols = data.columns.tolist()
-            if 'PET' in cols:
-                cols.remove('PET')
-            cols.insert(4, 'PET')
-            data = data[cols]
-            #################################################################################################
+            # # Reorder columns to put PET at position 4 (5th position)
+            # cols = data.columns.tolist()
+            # if 'PET' in cols:
+            #     cols.remove('PET')
+            # cols.insert(4, 'PET')
+            # data = data[cols]
+            # #################################################################################################
 
 
             #################################################################################################
