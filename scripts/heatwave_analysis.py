@@ -1078,17 +1078,17 @@ def main():
             data = data[cols]
             #################################################################################################
             
-            #################################################################################################
-            # data['PET'] = data.apply(calculate_pet, axis=1)
-            # print("PET calculated and added to the dataframe.")
+            ################################################################################################
+            data['PET'] = data.apply(calculate_pet, axis=1)
+            print("PET calculated and added to the dataframe.")
 
-            # # Reorder columns to put PET at position 4 (5th position)
-            # cols = data.columns.tolist()
-            # if 'PET' in cols:
-            #     cols.remove('PET')
-            # cols.insert(4, 'PET')
-            # data = data[cols]
-            # #################################################################################################
+            # Reorder columns to put PET at position 4 (5th position)
+            cols = data.columns.tolist()
+            if 'PET' in cols:
+                cols.remove('PET')
+            cols.insert(4, 'PET')
+            data = data[cols]
+            #################################################################################################
 
 
             #################################################################################################
